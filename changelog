@@ -1,0 +1,35 @@
+2008-04-22 V0.1
+ - Initial commit
+ - Autocompletion for plain prod items
+
+2008-04-22 V0.2
+ - prod_code as prod primary key
+ - add prod.prod_group column
+ - show prod list hierarhically (prod ls [<prod_group>])
+ - prod_code pattern in op ls
+ - hierarhical rep prod <prod_group>
+ - set spllitted to set and show
+ - update prod autocompletion for hierarhical products
+ - show long reports in pager
+
+2008-04-22 V0.2.1
+ - automagically create database structure, if no db file found
+
+2008-04-23 V0.2.2
+ - group name now include trailing period
+ - report by product and product list with group selected now show prod_code without group part
+
+2008-04-23 V0.2.3
+ - colorised output
+
+2008-04-24 V0.2.4
+ - completion now propose next prod code segment (not full code)
+ - bug fixed: product addition now keep trailing period in prod_group
+ - group existence check during prod addition
+
+2008-04-24 V0.2.5
+ - commands can be piped to stdin like echo "op ls" | clim
+ - new commands "prod dump" and "op dump" for data exchange
+
+2008-04-25 V0.2.6
+ - config extracted to separate file
