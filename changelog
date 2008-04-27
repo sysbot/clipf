@@ -33,3 +33,6 @@
 
 2008-04-25 V0.2.6
  - config extracted to separate file
+
+2008-04-27 V0.3.0
+ - plain text files used as data storage

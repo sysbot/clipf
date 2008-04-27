@@ -1,41 +1,46 @@
-#!/usr/bin/python
+#!/usr/bin/python2.5
 
-import sys, os, cmd, sqlite3, datetime, shlex,re
+import sys, os, cmd, datetime, shlex,re
 from getopt import getopt
 from os.path import expanduser
+import readline
 import readline, imp
-ops,args = getopt(sys.argv[1:],'c:d:')
-ops=dict(ops)
-confpath = ops.get('-c',expanduser('~/.climrc'))
+
+confpath=expanduser(len(sys.argv)>1 and sys.argv[1] or '~/.clipf/')
 if not os.access(confpath,os.F_OK):
-    print "config file don't exists, creating...",
-    cf=open(confpath,'w')
+    print "config don't exists, creating...",
+    os.mkdir(confpath)
+    dbpath=confpath+'db/'
+    os.mkdir(dbpath)
+    open(dbpath+'op','w').close()
+    open(dbpath+'prod','w').close()
+
+    cf=open(confpath+'clipf.conf','w')
     cf.write("""
 # clim configuration
 
-dbpath = '~/.clim.db'
-
 acc='00'
 max_lines=40
+prompt="\033[31m%(date)s:%(acc)s> \033[0m"
 
 fmts={
-'prod_code':'\033[34;1m%%(%s)-10.10s\033[0m',
-'prod_code_full':'\033[34;1m%%(%s)s\033[0m',
-'acc_id':'\033[35;1m%%(%s)-10.10s\033[0m',
-'prod_name':'\033[36m%%(%s)-16s\033[0m',
-'note':'\033[36m%%(%s)-16s\033[0m',
-'amount':'\033[37m%%(%s)8.2f\033[0m',
-'date':'\033[0m%%(%s)s',
-'header':'\033[34;1m',
-'param':'\033[35;1m%%(%s)s\033[0m',
-}
+    'prod':'\033[34;1m%%(%s)-10.10s\033[0m',
+    'prod_code':'\033[34;1m%%(%s)-10.10s\033[0m',
+    'prod_code_full':'\033[34;1m%%(%s)s\033[0m',
+    'acc_id':'\033[35;1m%%(%s)-10.10s\033[0m',
+    'prod_name':'\033[36m%%(%s)-16s\033[0m',
+    'note':'\033[36m%%(%s)-16s\033[0m',
+    'amount':'\033[37m%%(%s)8.2f\033[0m',
+    'date':'\033[0m%%(%s)s',
+    'header':'\033[34;1m',
+    'param':'\033[35;1m%%(%s)s\033[0m',
+    }
     """)
     cf.close()
     print "Done"
-config = imp.load_source('config',confpath)
+config = imp.load_source('config',confpath+'clipf.conf')
 
 
-clim_db=expanduser(ops.get('-d',config.dbpath))
 spln='\033[34m--------------------------------------\033[0m'
 
 class myerr(Exception): pass
@@ -51,19 +56,36 @@ class App(cmd.Cmd):
         dt=datetime.date.today().isoformat()
         self.opt={
                 'date': dt,
-                'date_from':dt,
+                'date_from':'2008-04-21',
                 'date_to':dt,
                 'acc': config.acc,
                 'max_lines': config.max_lines
                 }
-        db_exists=os.access(clim_db,os.F_OK)
-        self.con=sqlite3.connect(clim_db)
-        if not db_exists:
-            self.create_db()
+        # load prod list
+        self.db=confpath+'db/'
+        self.prodfmt="%(prod)s:%(dc)d:%(name)s\n"
+        self.opfmt="%(date)s:%(acc)s:%(prod)s:%(amount).2f:%(dc)d:%(note)s\n"
+        flds=('prod','dc','name')
+        f=open(self.db+'prod','r')
+        prods=[]
+        for ln in f:
+            r=dict(zip(flds,ln.rstrip('\n').split(':')))
+            r['dc']=int(r['dc'])
+            grp=r['prod'].rstrip('.')
+            try:
+                pp=grp.rindex('.')
+                grp=grp[:pp+1]
+            except ValueError:
+                grp=''
+            r['grp']=grp
+            prods.append(r)
+        f.close()
+        self.prods=prods
+        self.prodd=dict([(p['prod'],p) for p in prods])
         self.fmts=config.fmts
         self.setPrompt()
     def setPrompt(self):
-        self.prompt="\033[31m%(date)s:%(acc)s> \033[0m" % self.opt
+        self.prompt=config.prompt % self.opt
     def _fx(self,m):
         m=m.group(1)
         if ':' in m:
@@ -74,34 +96,6 @@ class App(cmd.Cmd):
     def ffmt(self,fmt):
         pat=re.compile(r"\$\(([a-z_:]+)\)")
         return re.sub(pat,self._fx,fmt).replace('[[',self.fmts['header']).replace(']]','\033[0m')
-    def create_db(self):
-        script="""
-        CREATE TABLE prod(
-        prod_id integer primary key,
-        prod_code text,
-        prod_name text, 
-        dt int, 
-        prod_group text);
-
-        CREATE UNIQUE INDEX unique_prod_code on prod(prod_code);
-
-        CREATE UNIQUE INDEX unique_prod_name on prod(prod_name);
-
-        CREATE TABLE op(
-        op_id integer primary key,
-        acc_id text,
-        prod_code text,
-        op_date text,
-        amount float,
-        note text,
-        dt int);
-
-        CREATE INDEX op_op_date on op(op_date);
-        """
-        print "Initializing database"
-        for sql in script.split('\n\n'):
-            print sql
-            self.execute(sql)
     def gen_completions(self,text):
         s=readline.get_line_buffer()
         grp=s and (s[-1]!=' ') and s.split()[-1] or ''
@@ -110,33 +104,24 @@ class App(cmd.Cmd):
             prod_group=''
         else:
             prod_group=grp[:pp+1]
-        sql="""select prod_code from prod where prod_group='%s' and prod_code like '%s%%'""" % (prod_group,grp)
-        grplen=len(prod_group)
-        res=[]
-        for f in self.select(sql):
-            s=f[0][grplen:]
-            if s[-1]!='.':
-                s+=' '
-            res.append(s)
-        #return [f[0][grplen:] for f in self.select(sql)]
-        return res
+        data=[r['prod'][len(r['grp']):] for r in self.prodd.itervalues() 
+                if r['prod'].startswith(grp) and r['grp']==prod_group]
+        data.sort()
+        return data
+
     def complete(self,text,state):
         if state==0:
             self.completions=self.gen_completions(text)+[None]
         return self.completions[state]
-    def select(self,sql):
-        cur=self.con.cursor()
-        cur.execute(sql)
-        return cur.fetchall()
-    def select_d(self,sql):
-        cur=self.con.cursor()
-        cur.execute(sql)
-        fields=[f[0] for f in cur.description]
-        return [dict(zip(fields,r)) for r in cur]
-    def execute(self,sql):
-        cur=self.con.cursor()
-        cur.execute(sql)
-        self.con.commit()
+    def select(self):
+        flds=('date','acc','prod','amount','dc','note')
+        f=open(self.db+'op','r')
+        for ln in f:
+            r=dict(zip(flds,ln.rstrip('\n').split(':')))
+            r['amount']=float(r['amount'])
+            r['dc']=int(r['dc'])
+            yield r
+        f.close()
     def dest(self,lst):
         if len(lst)>int(self.opt['max_lines']) and self.interactive:
             return os.popen('less','w')
@@ -156,10 +141,10 @@ class App(cmd.Cmd):
         return 0
 
     def do_prod(self,c):
-        self._cmd('prod',c,"Usage: prod ( ls | add | del ) <args>")
+        self._cmd('prod',c,"Usage: prod ( ls | add | rm ) <args>")
     do_p=do_prod
     def do_op(self,c):
-        self._cmd('op',c,"Usage: op ( ls | add | del ) <args>")
+        self._cmd('op',c,"Usage: op ( ls | add ) <args>")
     do_o=do_op
     def do_rep(self,c):
         self._cmd('rep',c,"Usage: rep ( prod | acc )")
@@ -168,23 +153,28 @@ class App(cmd.Cmd):
     def _rep_prod(self,args):
         prod_group=args and args[0] or ''
         dt,ct = 0.0, 0.0
-        sql = """select p.prod_code as prod_code, p.prod_name as prod_name, 
-            sum(o.amount*o.dt) as dt,
-            sum(o.amount*(1-o.dt)) as ct
-            from op o
-              join prod p on (o.prod_code like p.prod_code || '%%')
-            where o.op_date between '%(date_from)s' and '%(date_to)s' and acc_id='%(acc)s' and p.prod_group='%(prod_group)s'
-            group by p.prod_code, p.prod_name
-            order by p.prod_code, p.prod_name
-            """ % {
-                    'date_from':self.opt['date_from'],
-                    'date_to':self.opt['date_to'],
-                    'acc':self.opt['acc'],
-                    'prod_group':prod_group
-                   }
-        data=self.select_d(sql)
+        dfrom,dto,acc = [self.opt[x] for x in ('date_from','date_to','acc')]
+        grplen=len(prod_group)
+        groups={}
+        for r in self.select():
+            if dfrom<=r['date']<=dto and r['acc']==acc and r['prod'].startswith(prod_group):
+                prod=r['prod'][grplen:]
+                pp=prod.find('.')
+                if pp==-1:
+                    grp=prod
+                else:
+                    grp=prod[:pp+1]
+                rr=groups.get(grp,None)
+                if not rr:
+                    rr={'prod':grp, 'dt':0.0, 'ct':0.0}
+                    groups[grp]=rr
+                amount,dc=r['amount'],r['dc']
+                rr['dt']+=amount*dc #income
+                rr['ct']+=amount*(1-dc) #expense
+        data=groups.values()
+        data.sort(key=lambda rr:rr['prod'])
         dest=self.dest(data)
-        fmt=self.ffmt("$(prod_code)  $(dt:amount)  $(ct:amount)  %(per)4.1f%%  $(prod_name)")
+        fmt=self.ffmt("$(prod)  $(dt:amount)  $(ct:amount)  %(per)4.1f%%  $(prod_name)")
         try:
             print >>dest, self.ffmt("[[ Report by product. Period from $(date_from:param)[[ to $(date_to:param)]]") % self.opt
             if prod_group:
@@ -192,11 +182,11 @@ class App(cmd.Cmd):
             print >>dest, spln
             tot=sum([dd['ct'] for dd in data])
             for dd in data:
-                if prod_group:
-                    dd['prod_code']=dd['prod_code'][len(prod_group):]
                 dt+=dd['dt']
                 ct+=dd['ct']
                 dd['per']=dd['ct']*100/tot
+                prod=self.prodd.get(prod_group+dd['prod'],None)
+                dd['prod_name']=prod and prod['name'] or "code not in list"
                 print >>dest, fmt % dd
             print >>dest, spln
             print >>dest, self.ffmt("[[Totals:]]     %8.2f  %8.2f") % (dt,ct)
@@ -205,32 +195,28 @@ class App(cmd.Cmd):
                
     def _rep_acc(self,args):
         rb, dt,ct = 0.0, 0.0, 0.0
-        sql = """
-            select acc_id, sum(rest) as rest, sum(dt) as dt, sum(ct) as ct, sum(rest+dt-ct) as re
-            from (
-                select acc_id, 
-                0 as rest,
-                amount*dt as dt,
-                amount*(1-dt) as ct
-                from op 
-                where op_date between '%(date_from)s' and '%(date_to)s'
-                union all
-                select acc_id,
-                amount*(2*dt-1) as rest,
-                0 as dt,
-                0 as ct
-                from op
-                where op_date <'%(date_from)s') s
-            group by acc_id
-            order by acc_id
-            """ % self.opt 
-        data=self.select_d(sql)
+        dfrom,dto=self.opt['date_from'], self.opt['date_to']
+        data={}
+        for r in self.select():
+            acc,amount,dc=r['acc'],r['amount'],r['dc']
+            rr=data.get(acc,None)
+            if not rr:
+                rr={'acc':acc,'rest':0.0, 'dt':0.0, 'ct':0.0}
+                data[acc]=rr
+            if r['date']<dfrom:
+                rr['rest']+=amount*(2*dc-1)
+            elif r['date']<=dto:
+                rr['dt']+=amount*dc
+                rr['ct']+=amount*(1-dc)
+        data=data.values()
+        data.sort(key=lambda r:r['acc'])
         dest=self.dest(data)
         try:
             print >>dest, self.ffmt("[[Report by accounts. Period from $(date_from:param) [[to $(date_to:param)]]") % self.opt
             print >>dest, spln
-            fmt=self.ffmt("$(acc_id)  $(rest:amount)  $(dt:amount)  $(ct:amount)  $(re:amount)")
+            fmt=self.ffmt("$(acc:acc_id)  $(rest:amount)  $(dt:amount)  $(ct:amount)  $(re:amount)")
             for dd in data:
+                dd['re']=dd['rest']+dd['dt']-dd['ct']
                 rb+=dd['rest']
                 dt+=dd['dt']
                 ct+=dd['ct']
@@ -243,26 +229,34 @@ class App(cmd.Cmd):
 
     def _prod_ls(self,args):
         prod_group=args and args[0] or ''
-        data=self.select_d("select prod_code,prod_name,dt from prod where prod_group='%s' order by prod_code" % prod_group)
+        data=[r.copy() for r in self.prodd.itervalues() if r['grp']==prod_group]
         dest=self.dest(data)
-        fmt=self.ffmt("$(prod_code)  %(dt)d  $(prod_name)")
+        fmt=self.ffmt("$(prod)  %(dc)d  $(name:prod_name)")
         try:
             print >>dest, self.ffmt("[[Product list. Group: $(group:param)]]") % {'group':prod_group}
             print >>dest, spln
-            for r in self.select_d("select prod_code,prod_name,dt from prod where prod_group='%s' order by prod_code" % prod_group):
-                r['prod_code']=r['prod_code'][len(prod_group):]
+            for r in data:
+                r['prod']=r['prod'][len(prod_group):]
                 print >>dest, fmt % r
         except IOError:
             pass
+    def saveProds(self):
+        f=open(self.db+'prod.tmp','w')
+        for prod in self.prodd.itervalues():
+            f.write(self.prodfmt % prod)
+        f.close()
+        os.remove(self.db+'prod')
+        os.rename(self.db+'prod.tmp', self.db+'prod')
+
     def _prod_add(self,args):
         usage="Usage: prod add [-d] <prod_code> <prod_name>"
         ops,args = getopt(args,'d')
         check(len(args)==2, usage)
         ops=dict(ops)
         if '-d' in ops:
-            dt=1
+            dc=1
         else:
-            dt=0
+            dc=0
         prod_code=args[0]
         group=prod_code.rstrip('.')
         pp=group.rfind('.')
@@ -270,38 +264,43 @@ class App(cmd.Cmd):
             group=''
         else:
             group=group[:pp+1]
-        chk=self.select("select prod_code from prod where prod_code='%s'" % group)
+        chk=self.prodd.get(group,None)
         check(chk or (group==''), "Product group %s don't exists" % group)
-        args={'prod_code':prod_code,'prod_group':group,'prod_name':args[1],'dt':dt}
-        self.execute("insert into prod(prod_code,prod_group,prod_name,dt) values('%(prod_code)s','%(prod_group)s','%(prod_name)s', %(dt)d)" % args)
-        print "Product %s added" % args['prod_name']
+        args={'prod':prod_code,'grp':group,'name':args[1],'dc':dc}
+        self.prodd[prod_code]=args
+        f=open(self.db+'prod','a')
+        rr=self.prodfmt % args
+        f.write(rr)
+        f.close()
+        print "Product %s added" % args['prod']
     def _prod_dump(self,args):
         sql="""select prod_code,prod_name,dt from prod order by prod_code"""
         for r in self.select_d(sql):
             r['dtopt']=r['dt']==1 and '-d' or ''
             print "prod add %(dtopt)s %(prod_code)s '%(prod_name)s'" % r
-    def _prod_del(self,args):
+    def _prod_rm(self,args):
         usage="prod del <prod_code>"
         check(len(args)==1, usage)
-        self.execute("delete from prod where prod_code='%s'" % args[0])
-        print "Product %s deleted." % args[0]
+        data=[prod for prod in self.prodd.iterkeys() if prod.startswith(args[0])]
+        for prod in data:
+            del self.prodd[prod]
+            print "Product %s deleted." % prod
+        self.saveProds()
     def _op_ls(self,args):
-        fmt=self.ffmt('%(op_id)4d  $(op_date:date)  $(acc_id)  $(amount)  $(prod_code:prod_code_full)  $(note)')
-        prod_code=args and args[0]+'%' or '%'
+        fmt=self.ffmt('$(date)  $(acc:acc_id)  $(amount)  $(prod:prod_code_full)  $(note)')
+        prod_code=args and args[0] or ''
         dt, ct = 0.0, 0.0
-        sql="""select op_id,acc_id,prod_code,op_date,amount,dt,note 
-            from op 
-            where op_date between '%s' and '%s' and prod_code like '%s'
-            order by op_date,acc_id,op_id
-            """ % (self.opt['date_from'], self.opt['date_to'], prod_code)
-        data=self.select_d(sql)
+        dfrom,dto=self.opt['date_from'], self.opt['date_to']
+        data=[r for r in self.select() 
+                if dfrom<=r['date']<=dto and r['prod'].startswith(prod_code)]
+        data.sort(key=lambda x:[x[f] for f in ('date','acc')])
         dest=self.dest(data)
         try:
             print >>dest, self.ffmt("[[Operations]]")
             print >>dest, spln
             for d in data:
-                amount=float(d['amount'])
-                fdt=d['dt']
+                amount=d['amount']
+                fdt=d['dc']
                 dt+=amount*fdt
                 ct+=amount*(1-fdt)
                 print >>dest, fmt % d
@@ -321,28 +320,22 @@ class App(cmd.Cmd):
         ops,args = getopt(args,'a:d:')
         check(len(args)>1,usage)
         ops=dict(ops)
-        prod=self.select("select prod_code,dt from prod where prod_code='%s'" % args[0])
+        prod=self.prodd.get(args[0],None)
         check(prod,'No such product code: %s' % args[0])
-        prod_code,dt = prod[0]
         if len(args)>2:
             note=args[2]
         else:
             note=''
-        self.execute("""insert into op(acc_id,prod_code,op_date,amount,dt,note) 
-            values ('%(acc_id)s','%(prod_code)s','%(op_date)s',%(amount)s,%(dt)d,'%(note)s')
-            """ % {
-                    'acc_id': ops.get('-a',self.opt['acc']),
-                    'op_date': ops.get('-d',self.opt['date']),
-                    'prod_code': prod_code,
-                    'amount': args[1],
-                    'dt':dt,
-                    'note': note
-                  })
-    def _op_del(self,args):
-        usage="Usage: op del <prod_code>"
-        check(len(args)==1, usage)
-        self.execute("delete from op where op_id='%s'" % args[0])
-        print "Operation %s deleted." % args[0]
+        dd={
+            'acc': ops.get('-a',self.opt['acc']),
+            'date': ops.get('-d',self.opt['date']),
+            'prod': prod['prod'],
+            'amount': float(args[1]),
+            'dc':prod['dc'],
+            'note': note}
+        f=open(self.db+'op','a')
+        f.write(self.opfmt % dd)
+        f.close()
     def do_show(self,c):
         usage="Usage: show [<option_name>]"
         cl=c.split()
