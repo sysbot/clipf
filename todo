@@ -1,4 +1,3 @@
  - internationalization
  - Ctrl-c to abort current line editing
- - catch sql exceptions when adding product with the existing name
  - export operations to csv

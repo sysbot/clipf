@@ -36,3 +36,6 @@
 
 2008-04-27 V0.3.0
  - plain text files used as data storage
+
+2008-04-28 V0.3.1
+ - new feature: command aliases

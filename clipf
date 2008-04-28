@@ -35,6 +35,14 @@ fmts={
     'header':'\033[34;1m',
     'param':'\033[35;1m%%(%s)s\033[0m',
     }
+aliases={
+        'oo ': 'op add ',
+        'ol': 'op ls',
+        'pl': 'prod ls'
+        'o ': 'op '
+        'p ': 'prod ',
+        'r ': 'rep '
+        }
     """)
     cf.close()
     print "Done"
@@ -83,9 +91,15 @@ class App(cmd.Cmd):
         self.prods=prods
         self.prodd=dict([(p['prod'],p) for p in prods])
         self.fmts=config.fmts
+        self.aliases=config.aliases
         self.setPrompt()
     def setPrompt(self):
         self.prompt=config.prompt % self.opt
+    def precmd(self,line):
+        for key in self.aliases.iterkeys():
+            if line.startswith(key):
+                line=self.aliases[key]+line[len(key):]
+        return line
     def _fx(self,m):
         m=m.group(1)
         if ':' in m:
@@ -142,13 +156,10 @@ class App(cmd.Cmd):
 
     def do_prod(self,c):
         self._cmd('prod',c,"Usage: prod ( ls | add | rm ) <args>")
-    do_p=do_prod
     def do_op(self,c):
         self._cmd('op',c,"Usage: op ( ls | add ) <args>")
-    do_o=do_op
     def do_rep(self,c):
         self._cmd('rep',c,"Usage: rep ( prod | acc )")
-    do_r=do_rep
 
     def _rep_prod(self,args):
         prod_group=args and args[0] or ''
