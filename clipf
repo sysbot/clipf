@@ -107,6 +107,9 @@ class App(cmd.Cmd):
             if line.startswith(key):
                 line=self.aliases[key]+line[len(key):]
         return line
+    def preloop(self):
+        print """Personal finance accounting in command line.
+Type "help" for list of available commands. Type "help <command>" for help about particular command."""
     def _fx(self,m):
         m=m.group(1)
         if ':' in m:
@@ -168,6 +171,7 @@ class App(cmd.Cmd):
     Subcommands:
         add [-d] <item_code> <item_name> 
             - add new item. '-d' option mark item as income
+              Type <item_name> in quotes, if it contain spaces
         rm <item_code_pattern>
             - remove all items, which code starts with <item_code_pattern>
         ls [<item_code>]
@@ -183,6 +187,7 @@ class App(cmd.Cmd):
                 '-d' - override operation date to <date> (see 'help set' for details)
                 '-a' - override operation account to <account> (see 'set' for details)
               the income/expense flag for operation would be taken from item 
+              type <note> in quotes, if it contain spaces
         ls [<item_code_pattern>]
             - show list of operations for the default reporting period (see 'help set' for details)
               if <item_code_pattern> specified, show only operations with items, which code starts with pattern
