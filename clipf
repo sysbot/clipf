@@ -14,6 +14,8 @@ if '-h' in opts or '--help' in opts:
     """ % sys.argv[0]
     sys.exit(0)
 confpath=expanduser(args and args[0] or '~/.clipf/')
+if confpath[-1]!='/':
+    confpath+='/'
 if not os.access(confpath,os.F_OK):
     print "config don't exists, creating...",
     os.mkdir(confpath)
@@ -45,8 +47,8 @@ fmts={
 aliases={
         'oo ': 'op add ',
         'ol': 'op ls',
-        'pl': 'prod ls'
-        'o ': 'op '
+        'pl': 'prod ls',
+        'o ': 'op ',
         'p ': 'prod ',
         'r ': 'rep '
         }
@@ -84,7 +86,7 @@ class App(cmd.Cmd):
         f=open(self.db+'prod','r')
         prods=[]
         for ln in f:
-            r=dict(zip(flds,ln.rstrip('\n').split(':')))
+            r=dict(zip(flds,ln.decode('utf-8').rstrip('\n').split(':')))
             r['dc']=int(r['dc'])
             grp=r['prod'].rstrip('.')
             try:
@@ -103,6 +105,7 @@ class App(cmd.Cmd):
     def setPrompt(self):
         self.prompt=config.prompt % self.opt
     def precmd(self,line):
+        line=line.decode('utf-8')
         for key in self.aliases.iterkeys():
             if line.startswith(key):
                 line=self.aliases[key]+line[len(key):]
@@ -121,7 +124,7 @@ Type "help" for list of available commands. Type "help <command>" for help about
         pat=re.compile(r"\$\(([a-z_:]+)\)")
         return re.sub(pat,self._fx,fmt).replace('[[',self.fmts['header']).replace(']]','\033[0m')
     def gen_completions(self,text):
-        s=readline.get_line_buffer()
+        s=readline.get_line_buffer().decode('utf-8')
         grp=s and (s[-1]!=' ') and s.split()[-1] or ''
         pp=grp.rfind('.')
         if pp==-1:
@@ -141,7 +144,7 @@ Type "help" for list of available commands. Type "help <command>" for help about
         flds=('date','acc','prod','amount','dc','note')
         f=open(self.db+'op','r')
         for ln in f:
-            r=dict(zip(flds,ln.rstrip('\n').split(':')))
+            r=dict(zip(flds,ln.decode('utf-8').rstrip('\n').split(':')))
             r['amount']=float(r['amount'])
             r['dc']=int(r['dc'])
             yield r
