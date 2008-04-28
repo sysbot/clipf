@@ -6,7 +6,14 @@ from os.path import expanduser
 import readline
 import readline, imp
 
-confpath=expanduser(len(sys.argv)>1 and sys.argv[1] or '~/.clipf/')
+opts,args = getopt(sys.argv[1:],'h',['help'])
+opts=dict(opts)
+if '-h' in opts or '--help' in opts:
+    print """ Usage %s [-h | --help] [<conf_path>]
+    <conf_path> default to ~/.clipf/
+    """ % sys.argv[0]
+    sys.exit(0)
+confpath=expanduser(args and args[0] or '~/.clipf/')
 if not os.access(confpath,os.F_OK):
     print "config don't exists, creating...",
     os.mkdir(confpath)
@@ -156,10 +163,45 @@ class App(cmd.Cmd):
 
     def do_prod(self,c):
         self._cmd('prod',c,"Usage: prod ( ls | add | rm ) <args>")
+    def help_prod(self):
+        print """ Usage: prod <subcommand> [options] [<args>] 
+    Subcommands:
+        add [-d] <item_code> <item_name> 
+            - add new item. '-d' option mark item as income
+        rm <item_code_pattern>
+            - remove all items, which code starts with <item_code_pattern>
+        ls [<item_code>]
+            - list all items in <item_code> group
+          """
     def do_op(self,c):
         self._cmd('op',c,"Usage: op ( ls | add ) <args>")
+    def help_op(self):
+        print """ Usage: op <subcommand> [<options>] <args>
+    Subcommands:
+        add [-d <date>] [-a <account>] <item_code> <amount> [<note>]
+            - add new operation.
+                '-d' - override operation date to <date> (see 'help set' for details)
+                '-a' - override operation account to <account> (see 'set' for details)
+              the income/expense flag for operation would be taken from item 
+        ls [<item_code_pattern>]
+            - show list of operations for the default reporting period (see 'help set' for details)
+              if <item_code_pattern> specified, show only operations with items, which code starts with pattern
+    Note:
+        There is no delete command for operation. You need to add the same operation with negative amount
+        to revoke operation.
+            """
+
     def do_rep(self,c):
         self._cmd('rep',c,"Usage: rep ( prod | acc )")
+    def help_rep(self):
+        print """ Usage: rep <subcommand> [<args>]
+    Subcommands:
+        prod [<item_code>]
+            - show turnover report with total turnover by each subling of <item_code> item group. 
+              Default by root group.
+        acc
+            - show turnover and remains by each account
+        """
 
     def _rep_prod(self,args):
         prod_group=args and args[0] or ''
@@ -359,6 +401,10 @@ class App(cmd.Cmd):
                     print "%s = %s" % (o, self.opt[o])
                 else:
                     print "Unknown option:%s" % o
+    def help_show(self):
+        print """ Usage: show [<option>]
+        Show current option settings (all or for <option> only)
+        """
     def do_set(self,c):
         usage="Usage: set <option> <value>"
         cl=shlex.split(c)
@@ -371,10 +417,22 @@ class App(cmd.Cmd):
         else:
             print usage
         self.setPrompt()
+    def help_set(self):
+        print """ Usage: set <option> <value>
+    Possible options:
+        date - default date for new operation.
+        date_from, date_to - period for all reports and operation list (op ls).
+        acc - default account for new operation.
+        max_lines - use console viewer (less) if report output exceed this number of lines.
+    Note:
+        Enter all dates in YYYY-MM-DD format.
+        """
 
     def do_quit(self,c):
         return 1
     do_q=do_quit
+    def help_quit(self):
+        print "Quit the program."
 
 def run():
     app=App()
