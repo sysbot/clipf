@@ -14,6 +14,8 @@ if '-h' in opts or '--help' in opts:
     """ % sys.argv[0]
     sys.exit(0)
 confpath=expanduser(args and args[0] or '~/.clipf/')
+if confpath[-1]!='/':
+    confpath=confpath+'/'
 if not os.access(confpath,os.F_OK):
     print "config don't exists, creating...",
     os.mkdir(confpath)
@@ -45,8 +47,8 @@ fmts={
 aliases={
         'oo ': 'op add ',
         'ol': 'op ls',
-        'pl': 'prod ls'
-        'o ': 'op '
+        'pl': 'prod ls',
+        'o ': 'op ',
         'p ': 'prod ',
         'r ': 'rep '
         }
