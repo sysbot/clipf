@@ -35,7 +35,7 @@ prompt="\033[31m%(date)s:%(acc)s> \033[0m"
 fmts={
     'prod':'\033[34;1m%%(%s)-10.10s\033[0m',
     'prod_code':'\033[34;1m%%(%s)-10.10s\033[0m',
-    'prod_code_full':'\033[34;1m%%(%s)s\033[0m',
+    'prod_code_full':'\033[34;1m%%(%s)-10s\033[0m',
     'acc_id':'\033[35;1m%%(%s)-10.10s\033[0m',
     'prod_name':'\033[36m%%(%s)-16s\033[0m',
     'note':'\033[36m%%(%s)-16s\033[0m',
@@ -130,8 +130,10 @@ Type "help" for list of available commands. Type "help <command>" for help about
             prod_group=''
         else:
             prod_group=grp[:pp+1]
-        data=[r['prod'][len(r['grp']):] for r in self.prodd.itervalues() 
+        grplen=len(prod_group)
+        data=[r['prod'][grplen:] for r in self.prodd.itervalues() 
                 if r['prod'].startswith(grp) and r['grp']==prod_group]
+        data=[ itm[-1]!='.' and itm+' ' or itm for itm in data]
         data.sort()
         return data
 
