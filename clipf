@@ -173,10 +173,8 @@ Type "help" for list of available commands. Type "help <command>" for help about
             meth(cl[1:])
         except AttributeError:
             print usage
-            raise
         except myerr, e:
             print e
-            raise
         return 0
 
     def do_prod(self,c):
