@@ -15,7 +15,7 @@ if '-h' in opts or '--help' in opts:
     sys.exit(0)
 confpath=expanduser(args and args[0] or '~/.clipf/')
 if confpath[-1]!='/':
-    confpath=confpath+'/'
+    confpath+='/'
 if not os.access(confpath,os.F_OK):
     print "config don't exists, creating...",
     os.mkdir(confpath)
@@ -28,6 +28,7 @@ if not os.access(confpath,os.F_OK):
     cf.write("""
 # clim configuration
 
+enc=self.enc
 acc='00'
 max_lines=40
 prompt="\033[31m%(date)s:%(acc)s> \033[0m"
@@ -44,14 +45,14 @@ fmts={
     'header':'\033[34;1m',
     'param':'\033[35;1m%%(%s)s\033[0m',
     }
-aliases={
-        'oo ': 'op add ',
-        'ol': 'op ls',
-        'pl': 'prod ls',
-        'o ': 'op ',
-        'p ': 'prod ',
-        'r ': 'rep '
-        }
+aliases=[
+        'oo :op add ',
+        'ol:op ls',
+        'pl:prod ls',
+        'o :op ',
+        'p :prod ',
+        'r :rep '
+        ]
     """)
     cf.close()
     print "Done"
@@ -71,6 +72,10 @@ class App(cmd.Cmd):
     def __init__(self):
         cmd.Cmd.__init__(self)
         dt=datetime.date.today().isoformat()
+        self.term_enc=sys.stdin.encoding
+        self.db_enc='UTF-8'
+        if not self.term_enc:
+            self.term_enc='UTF-8'
         self.opt={
                 'date': dt,
                 'date_from':dt,
@@ -80,13 +85,13 @@ class App(cmd.Cmd):
                 }
         # load prod list
         self.db=confpath+'db/'
-        self.prodfmt="%(prod)s:%(dc)d:%(name)s\n"
-        self.opfmt="%(date)s:%(acc)s:%(prod)s:%(amount).2f:%(dc)d:%(note)s\n"
+        self.prodfmt=u"%(prod)s:%(dc)d:%(name)s\n"
+        self.opfmt=u"%(date)s:%(acc)s:%(prod)s:%(amount).2f:%(dc)d:%(note)s\n"
         flds=('prod','dc','name')
         f=open(self.db+'prod','r')
         prods=[]
         for ln in f:
-            r=dict(zip(flds,ln.rstrip('\n').split(':')))
+            r=dict(zip(flds,ln.decode(self.db_enc).rstrip('\n').split(':')))
             r['dc']=int(r['dc'])
             grp=r['prod'].rstrip('.')
             try:
@@ -100,15 +105,16 @@ class App(cmd.Cmd):
         self.prods=prods
         self.prodd=dict([(p['prod'],p) for p in prods])
         self.fmts=config.fmts
-        self.aliases=config.aliases
+        self.aliases=dict([alias.decode(self.db_enc).split(':') for alias in config.aliases])
         self.setPrompt()
     def setPrompt(self):
         self.prompt=config.prompt % self.opt
     def precmd(self,line):
+        line=line.decode(self.term_enc)
         for key in self.aliases.iterkeys():
             if line.startswith(key):
                 line=self.aliases[key]+line[len(key):]
-        return line
+        return line.encode(self.term_enc)
     def preloop(self):
         print """Personal finance accounting in command line.
 Type "help" for list of available commands. Type "help <command>" for help about particular command."""
@@ -123,7 +129,7 @@ Type "help" for list of available commands. Type "help <command>" for help about
         pat=re.compile(r"\$\(([a-z_:]+)\)")
         return re.sub(pat,self._fx,fmt).replace('[[',self.fmts['header']).replace(']]','\033[0m')
     def gen_completions(self,text):
-        s=readline.get_line_buffer()
+        s=readline.get_line_buffer().decode(self.term_enc)
         grp=s and (s[-1]!=' ') and s.split()[-1] or ''
         pp=grp.rfind('.')
         if pp==-1:
@@ -135,20 +141,23 @@ Type "help" for list of available commands. Type "help <command>" for help about
                 if r['prod'].startswith(grp) and r['grp']==prod_group]
         data=[ itm[-1]!='.' and itm+' ' or itm for itm in data]
         data.sort()
+        data=[item.encode(self.term_enc) for item in data]
         return data
 
     def complete(self,text,state):
         if state==0:
             self.completions=self.gen_completions(text)+[None]
         return self.completions[state]
-    def select(self):
+    def select(self,dfrom=''):
         flds=('date','acc','prod','amount','dc','note')
         f=open(self.db+'op','r')
         for ln in f:
-            r=dict(zip(flds,ln.rstrip('\n').split(':')))
-            r['amount']=float(r['amount'])
-            r['dc']=int(r['dc'])
-            yield r
+            if ln>=dfrom:
+                rr=ln.decode(self.db_enc).rstrip('\n').split(':')
+                r=dict(zip(flds,rr))
+                r['amount']=float(r['amount'])
+                r['dc']=int(r['dc'])
+                yield r
         f.close()
     def dest(self,lst):
         if len(lst)>int(self.opt['max_lines']) and self.interactive:
@@ -157,15 +166,17 @@ Type "help" for list of available commands. Type "help <command>" for help about
             return None
     def _cmd(self,cmd,c,usage):
         try:
-            cl=shlex.split(c)
+            cl=[s.decode(self.term_enc) for s in shlex.split(c)]
             check(len(cl),usage)
             cc=cl[0]
             meth=getattr(self,'_%s_%s' % (cmd, cc))
             meth(cl[1:])
         except AttributeError:
             print usage
+            raise
         except myerr, e:
             print e
+            raise
         return 0
 
     def do_prod(self,c):
@@ -218,8 +229,8 @@ Type "help" for list of available commands. Type "help <command>" for help about
         dfrom,dto,acc = [self.opt[x] for x in ('date_from','date_to','acc')]
         grplen=len(prod_group)
         groups={}
-        for r in self.select():
-            if dfrom<=r['date']<=dto and r['acc']==acc and r['prod'].startswith(prod_group):
+        for r in self.select(dfrom=self.opt['date_from']):
+            if r['prod'].startswith(prod_group) and r['date']<=dto:
                 prod=r['prod'][grplen:]
                 pp=prod.find('.')
                 if pp==-1:
@@ -305,7 +316,8 @@ Type "help" for list of available commands. Type "help <command>" for help about
     def saveProds(self):
         f=open(self.db+'prod.tmp','w')
         for prod in self.prodd.itervalues():
-            f.write(self.prodfmt % prod)
+            rr=self.prodfmt % prod
+            f.write(rr.encode(self.db_enc))
         f.close()
         os.remove(self.db+'prod')
         os.rename(self.db+'prod.tmp', self.db+'prod')
@@ -332,7 +344,7 @@ Type "help" for list of available commands. Type "help <command>" for help about
         self.prodd[prod_code]=args
         f=open(self.db+'prod','a')
         rr=self.prodfmt % args
-        f.write(rr)
+        f.write(rr.encode(self.term_enc))
         f.close()
         print "Product %s added" % args['prod']
     def _prod_dump(self,args):
@@ -353,8 +365,8 @@ Type "help" for list of available commands. Type "help <command>" for help about
         prod_code=args and args[0] or ''
         dt, ct = 0.0, 0.0
         dfrom,dto=self.opt['date_from'], self.opt['date_to']
-        data=[r for r in self.select() 
-                if dfrom<=r['date']<=dto and r['prod'].startswith(prod_code)]
+        data=[r for r in self.select(dfrom=self.opt['date_from']) 
+                if r['date']<=dto and r['prod'].startswith(prod_code)]
         data.sort(key=lambda x:[x[f] for f in ('date','acc')])
         dest=self.dest(data)
         try:
@@ -396,7 +408,8 @@ Type "help" for list of available commands. Type "help <command>" for help about
             'dc':prod['dc'],
             'note': note}
         f=open(self.db+'op','a')
-        f.write(self.opfmt % dd)
+        rr=self.opfmt % dd
+        f.write(rr.encode(self.db_enc))
         f.close()
     def do_show(self,c):
         usage="Usage: show [<option_name>]"
