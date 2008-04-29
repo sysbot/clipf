@@ -28,7 +28,6 @@ if not os.access(confpath,os.F_OK):
     cf.write("""
 # clim configuration
 
-enc=self.enc
 acc='00'
 max_lines=40
 prompt="\033[31m%(date)s:%(acc)s> \033[0m"
