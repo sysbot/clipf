@@ -39,3 +39,7 @@
 
 2008-04-28 V0.3.1
  - new feature: command aliases
+
+2008-04-29 V0.3.2
+ - now allow national characters (i18n)
+ - a lot of code rewriten to use objects instead dictionaries
