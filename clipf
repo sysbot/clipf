@@ -67,48 +67,52 @@ def check(cond, msg):
     if not cond:
         raise myerr(msg)
 
+class Rec(object):
+    def __init__(self,**kwargs):
+        self.__dict__.update(**kwargs)
+
+dt=datetime.date.today().isoformat()
+opt=Rec(
+        date=dt,
+        date_from=dt,
+        date_to=dt,
+        acc=config.acc,
+        max_lines=config.max_lines
+        )
+
 class App(cmd.Cmd):
     prompt="$>"
     def __init__(self):
         cmd.Cmd.__init__(self)
-        dt=datetime.date.today().isoformat()
         self.term_enc=sys.stdin.encoding
         self.db_enc='UTF-8'
         if not self.term_enc:
             self.term_enc='UTF-8'
-        self.opt={
-                'date': dt,
-                'date_from':dt,
-                'date_to':dt,
-                'acc': config.acc,
-                'max_lines': config.max_lines
-                }
         # load prod list
         self.db=confpath+'db/'
         self.prodfmt=u"%(prod)s:%(dc)d:%(name)s\n"
         self.opfmt=u"%(date)s:%(acc)s:%(prod)s:%(amount).2f:%(dc)d:%(note)s\n"
         flds=('prod','dc','name')
         f=open(self.db+'prod','r')
-        prods=[]
+        prodd={}
         for ln in f:
-            r=dict(zip(flds,ln.decode(self.db_enc).rstrip('\n').split(':')))
-            r['dc']=int(r['dc'])
-            grp=r['prod'].rstrip('.')
+            rr=ln.decode(self.db_enc).rstrip('\n').split(':')
+            r=Rec(prod=rr[0],dc=int(rr[1]),name=rr[2])
+            grp=r.prod.rstrip('.')
             try:
                 pp=grp.rindex('.')
                 grp=grp[:pp+1]
             except ValueError:
                 grp=''
-            r['grp']=grp
-            prods.append(r)
+            r.grp=grp
+            prodd[r.prod]=r
         f.close()
-        self.prods=prods
-        self.prodd=dict([(p['prod'],p) for p in prods])
+        self.prodd=prodd
         self.fmts=config.fmts
         self.aliases=dict([alias.decode(self.db_enc).split(':') for alias in config.aliases])
         self.setPrompt()
     def setPrompt(self):
-        self.prompt=config.prompt % self.opt
+        self.prompt=config.prompt % opt.__dict__
     def precmd(self,line):
         line=line.decode(self.term_enc)
         for key in self.aliases.iterkeys():
@@ -137,8 +141,8 @@ Type "help" for list of available commands. Type "help <command>" for help about
         else:
             prod_group=grp[:pp+1]
         grplen=len(prod_group)
-        data=[r['prod'][grplen:] for r in self.prodd.itervalues() 
-                if r['prod'].startswith(grp) and r['grp']==prod_group]
+        data=[r.prod[grplen:] for r in self.prodd.itervalues() 
+                if r.prod.startswith(grp) and r.grp==prod_group]
         data=[ itm[-1]!='.' and itm+' ' or itm for itm in data]
         data.sort()
         data=[item.encode(self.term_enc) for item in data]
@@ -154,13 +158,10 @@ Type "help" for list of available commands. Type "help <command>" for help about
         for ln in f:
             if ln>=dfrom:
                 rr=ln.decode(self.db_enc).rstrip('\n').split(':')
-                r=dict(zip(flds,rr))
-                r['amount']=float(r['amount'])
-                r['dc']=int(r['dc'])
-                yield r
+                yield Rec(date=rr[0],acc=rr[1],prod=rr[2],amount=float(rr[3]),dc=int(rr[4]),note=rr[5])
         f.close()
     def dest(self,lst):
-        if len(lst)>int(self.opt['max_lines']) and self.interactive:
+        if len(lst)>int(opt.max_lines) and self.interactive:
             return os.popen('less','w')
         else:
             return None
@@ -226,12 +227,11 @@ Type "help" for list of available commands. Type "help <command>" for help about
     def _rep_prod(self,args):
         prod_group=args and args[0] or ''
         dt,ct = 0.0, 0.0
-        dfrom,dto,acc = [self.opt[x] for x in ('date_from','date_to','acc')]
         grplen=len(prod_group)
         groups={}
-        for r in self.select(dfrom=self.opt['date_from']):
-            if r['prod'].startswith(prod_group) and r['date']<=dto:
-                prod=r['prod'][grplen:]
+        for r in self.select(dfrom=opt.date_from):
+            if r.prod.startswith(prod_group) and r.date<=opt.date_to and r.acc==opt.acc:
+                prod=r.prod[grplen:]
                 pp=prod.find('.')
                 if pp==-1:
                     grp=prod
@@ -239,28 +239,27 @@ Type "help" for list of available commands. Type "help <command>" for help about
                     grp=prod[:pp+1]
                 rr=groups.get(grp,None)
                 if not rr:
-                    rr={'prod':grp, 'dt':0.0, 'ct':0.0}
+                    rr=Rec(prod=grp,dt=0.0,ct=0.0)
                     groups[grp]=rr
-                amount,dc=r['amount'],r['dc']
-                rr['dt']+=amount*dc #income
-                rr['ct']+=amount*(1-dc) #expense
+                rr.dt+=r.amount*r.dc #income
+                rr.ct+=r.amount*(1-r.dc) #expense
         data=groups.values()
-        data.sort(key=lambda rr:rr['prod'])
+        data.sort(key=lambda rr:rr.prod)
         dest=self.dest(data)
         fmt=self.ffmt("$(prod)  $(dt:amount)  $(ct:amount)  %(per)4.1f%%  $(prod_name)")
         try:
-            print >>dest, self.ffmt("[[ Report by product. Period from $(date_from:param)[[ to $(date_to:param)]]") % self.opt
+            print >>dest, self.ffmt("[[ Report by product. Period from $(date_from:param)[[ to $(date_to:param)]]") % opt.__dict__
             if prod_group:
                 print >>dest, self.ffmt("[[ Product group: $(group:param)]]") % {'group':prod_group}
             print >>dest, spln
-            tot=sum([dd['ct'] for dd in data])
+            tot=sum([dd.ct for dd in data])
             for dd in data:
-                dt+=dd['dt']
-                ct+=dd['ct']
-                dd['per']=dd['ct']*100/tot
-                prod=self.prodd.get(prod_group+dd['prod'],None)
-                dd['prod_name']=prod and prod['name'] or "code not in list"
-                print >>dest, fmt % dd
+                dt+=dd.dt
+                ct+=dd.ct
+                dd.per=dd.ct*100/tot
+                prod=self.prodd.get(prod_group+dd.prod,None)
+                dd.prod_name=prod and prod.name or "code not in list"
+                print >>dest, fmt % dd.__dict__
             print >>dest, spln
             print >>dest, self.ffmt("[[Totals:]]     %8.2f  %8.2f") % (dt,ct)
         except IOError:
@@ -268,32 +267,30 @@ Type "help" for list of available commands. Type "help <command>" for help about
                
     def _rep_acc(self,args):
         rb, dt,ct = 0.0, 0.0, 0.0
-        dfrom,dto=self.opt['date_from'], self.opt['date_to']
         data={}
         for r in self.select():
-            acc,amount,dc=r['acc'],r['amount'],r['dc']
-            rr=data.get(acc,None)
+            rr=data.get(r.acc,None)
             if not rr:
-                rr={'acc':acc,'rest':0.0, 'dt':0.0, 'ct':0.0}
-                data[acc]=rr
-            if r['date']<dfrom:
-                rr['rest']+=amount*(2*dc-1)
-            elif r['date']<=dto:
-                rr['dt']+=amount*dc
-                rr['ct']+=amount*(1-dc)
+                rr=Rec(acc=r.acc,rest=0.0,dt=0.0,ct=0.0)
+                data[r.acc]=rr
+            if r.date<opt.date_from:
+                rr.rest+=r.amount*(2*r.dc-1)
+            elif r.date<=opt.date_to:
+                rr.dt+=r.amount*r.dc
+                rr.ct+=r.amount*(1-r.dc)
         data=data.values()
-        data.sort(key=lambda r:r['acc'])
+        data.sort(key=lambda r:r.acc)
         dest=self.dest(data)
         try:
-            print >>dest, self.ffmt("[[Report by accounts. Period from $(date_from:param) [[to $(date_to:param)]]") % self.opt
+            print >>dest, self.ffmt("[[Report by accounts. Period from $(date_from:param) [[to $(date_to:param)]]") % opt.__dict__
             print >>dest, spln
             fmt=self.ffmt("$(acc:acc_id)  $(rest:amount)  $(dt:amount)  $(ct:amount)  $(re:amount)")
             for dd in data:
-                dd['re']=dd['rest']+dd['dt']-dd['ct']
-                rb+=dd['rest']
-                dt+=dd['dt']
-                ct+=dd['ct']
-                print >>dest, fmt % dd
+                dd.re=dd.rest+dd.dt-dd.ct
+                rb+=dd.rest
+                dt+=dd.dt
+                ct+=dd.ct
+                print >>dest, fmt % dd.__dict__
             print >>dest, spln
             print >>dest, self.ffmt("[[Totals:]]     %8.2f  %8.2f  %8.2f  %8.2f") % (rb,dt,ct,rb+dt-ct)
         except IOError:
@@ -302,21 +299,24 @@ Type "help" for list of available commands. Type "help <command>" for help about
 
     def _prod_ls(self,args):
         prod_group=args and args[0] or ''
-        data=[r.copy() for r in self.prodd.itervalues() if r['grp']==prod_group]
+        grplen=len(prod_group)
+        data=[Rec(**r.__dict__) for r in self.prodd.itervalues() if r.grp==prod_group]
+        for r in data:
+            r.prod=r.prod[grplen:]
+        data.sort(key=lambda k:k.prod)
         dest=self.dest(data)
         fmt=self.ffmt("$(prod)  %(dc)d  $(name:prod_name)")
         try:
             print >>dest, self.ffmt("[[Product list. Group: $(group:param)]]") % {'group':prod_group}
             print >>dest, spln
             for r in data:
-                r['prod']=r['prod'][len(prod_group):]
-                print >>dest, fmt % r
+                print >>dest, fmt % r.__dict__
         except IOError:
             pass
     def saveProds(self):
         f=open(self.db+'prod.tmp','w')
         for prod in self.prodd.itervalues():
-            rr=self.prodfmt % prod
+            rr=self.prodfmt % prod.__dict__
             f.write(rr.encode(self.db_enc))
         f.close()
         os.remove(self.db+'prod')
@@ -340,13 +340,13 @@ Type "help" for list of available commands. Type "help <command>" for help about
             group=group[:pp+1]
         chk=self.prodd.get(group,None)
         check(chk or (group==''), "Product group %s don't exists" % group)
-        args={'prod':prod_code,'grp':group,'name':args[1],'dc':dc}
+        args=Rec(prod=prod_code,grp=group,name=args[1],dc=dc)
         self.prodd[prod_code]=args
         f=open(self.db+'prod','a')
-        rr=self.prodfmt % args
+        rr=self.prodfmt % args.__dict__
         f.write(rr.encode(self.term_enc))
         f.close()
-        print "Product %s added" % args['prod']
+        print "Product %s added" % args.prod
     def _prod_dump(self,args):
         sql="""select prod_code,prod_name,dt from prod order by prod_code"""
         for r in self.select_d(sql):
@@ -364,20 +364,17 @@ Type "help" for list of available commands. Type "help <command>" for help about
         fmt=self.ffmt('$(date)  $(acc:acc_id)  $(amount)  $(prod:prod_code_full)  $(note)')
         prod_code=args and args[0] or ''
         dt, ct = 0.0, 0.0
-        dfrom,dto=self.opt['date_from'], self.opt['date_to']
-        data=[r for r in self.select(dfrom=self.opt['date_from']) 
-                if r['date']<=dto and r['prod'].startswith(prod_code)]
-        data.sort(key=lambda x:[x[f] for f in ('date','acc')])
+        data=[r for r in self.select(dfrom=opt.date_from) 
+                if r.date<=opt.date_to and r.prod.startswith(prod_code)]
+        data.sort(key=lambda x:(x.date,x.acc))
         dest=self.dest(data)
         try:
             print >>dest, self.ffmt("[[Operations]]")
             print >>dest, spln
             for d in data:
-                amount=d['amount']
-                fdt=d['dc']
-                dt+=amount*fdt
-                ct+=amount*(1-fdt)
-                print >>dest, fmt % d
+                dt+=d.amount*d.dc
+                ct+=d.amount*(1-d.dc)
+                print >>dest, fmt % d.__dict__
             print >>dest, spln
             print >>dest, self.ffmt("[[Totals: dt=]]%.2f  [[ct=]]%.2f") %(dt,ct)
         except IOError:
@@ -400,27 +397,27 @@ Type "help" for list of available commands. Type "help <command>" for help about
             note=args[2]
         else:
             note=''
-        dd={
-            'acc': ops.get('-a',self.opt['acc']),
-            'date': ops.get('-d',self.opt['date']),
-            'prod': prod['prod'],
-            'amount': float(args[1]),
-            'dc':prod['dc'],
-            'note': note}
+        dd=Rec(
+            acc= ops.get('-a',opt.acc),
+            date= ops.get('-d',opt.date),
+            prod= prod.prod,
+            amount= float(args[1]),
+            dc=prod.dc,
+            note= note)
         f=open(self.db+'op','a')
-        rr=self.opfmt % dd
+        rr=self.opfmt % dd.__dict__
         f.write(rr.encode(self.db_enc))
         f.close()
     def do_show(self,c):
         usage="Usage: show [<option_name>]"
         cl=c.split()
-        opts=self.opt.keys()
+        opts=opt.__dict__.keys()
         if cl:
             opts=cl
         for o in opts:
             if o[0]!='_':
-                if o in self.opt:
-                    print "%s = %s" % (o, self.opt[o])
+                if o in opt.__dict__:
+                    print "%s = %s" % (o, getattr(opt,o))
                 else:
                     print "Unknown option:%s" % o
     def help_show(self):
@@ -432,8 +429,8 @@ Type "help" for list of available commands. Type "help <command>" for help about
         cl=shlex.split(c)
         if len(cl)==2:
             # set option value
-            if cl[0] in self.opt:
-                self.opt[cl[0]]=cl[1]
+            if cl[0] in opt.__dict__:
+                opt.__dict__[cl[0]]=cl[1]
             else:
                 print "Unknown option: %s" % cl[0]
         else:
