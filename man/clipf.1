@@ -1,0 +1,127 @@
+.TH clipf 1 
+.SH NAME
+clipf \- Personal finance manager with command line interface
+.SH SYNOPSYS
+.B clipf
+[<conf_dir>]
+.SH DESCRIPTION
+Simple personal finance manager, allow to track Your incomes/expences
+by accounts and hierarchical categories. Store all data in flat text
+files.
+.SH ARGUMENTS
+.TP
+<conf_dir>
+Directory with configuration file and data files. Default to
+~/.clipf/. If there is no such directory found at program startup, it
+would be created and populated by default configuration and empty data
+files.
+.SH DEFINITIONS
+.B account
+- describe independent money storage, for which You want to track
+remains and turnover.
+.P
+.B item
+- describe categories of Your incomes/expences. Can be nested as
+files/directories in file system.
+.P
+.B item code
+- it is segmented unique identifier of item/item group. Period "."
+in item code define nesting levels. Period at the end of item code
+describe, that this item is group (have subling items).
+.P
+.B operation
+- define single money transaction (income or expense).
+.SH COMMANDS CONCERNING ITEMS
+.TP
+prod add [\-d] <item_code> <item_name>
+Add new item. Type <item_name> in quotes, if it contain spaces.
+.RS
+.TP
+.B \-d 
+- define this item as income (default to expence).
+.RE
+.TP
+prod rm <item_code_prefix>
+Remove all items, which code starts with <item_code_prefix>. This
+don't affect the operations list.
+.TP
+prod ls [<item_code>]
+Show one level of item list - direct sublings of <item_code>. Default
+to root level.
+.TP
+prod mv <old_item_code_prefix> <new_item_code_prefix>
+Update all item codes, which starts with <old_item_code_prefix>,
+replacing it to <new_item_code_prefix>. Item codes in operation list 
+would be updated as well.
+.SH COMMANDS CONCERNING OPERATIONS
+.TP
+op add [\-d <date>] [\-a <account>] <item_code> <amount> [<note>]
+Add new operation
+.RS
+.TP
+.B \-d
+- override default operation date to <date>.
+.TP
+.B \-a
+- override defaut operation account to <account>
+.RE
+.TP
+op ls [<item_code_prefix>]
+Show list of operations in current reporting period. If
+<item_code_prefix> specified, list would be limited by the operations,
+which item code starts with <item_code_prefix>.
+.SH COMMANDS CONCERNING REPORTING
+Reporting period is always between <date_from> and <date_to> global
+options, which You set by
+.B set
+command.
+.TP
+rep prod [<item_code>]
+Show turnover report for items (item groups), which are direct subling
+of <item_code> (default to root). Turnover for item group is summ of
+turnovers of all their nested items/groups.
+.TP
+rep acc
+Show remains and turnovers for all accounts.
+.SH OTHER COMMANDS
+.TP
+set <option> <value>
+Set global option <option> value to <value>
+Available options:
+.RS
+.TP 
+.B date
+- default date for new operations. Can be overriden by \-d option of
+"op add".
+.TP 
+.B date_from
+.TP
+.B date_to
+- reporting period for "op ls" and all "rep" subcommands.
+.TP
+.B acc
+- default account for new operations. Can be overriden by \-a option
+of "op add".
+.TP
+.B max_lines
+- if number of lines in report output exceed this value, then "less"
+would be used to show report output.
+.RE
+.TP
+show [<option>]
+Show current values of all global options or specified <option>.
+.TP
+calc <expression>
+Embedded calculator. Evaluate numeric expression and print the result.
+.SH FILES
+.I ~/.clipf/
+.RS
+Default configuration directory. Contain
+.I clipf.conf
+configuration file, and
+.I db/
+subdirectory with data files.
+.SH AUTHOR
+Denis Galtsev <galtsevdv@gmail.com>
+.SH SEE ALSO
+Program site at: http://code.google.com/p/clipf/

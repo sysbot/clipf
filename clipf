@@ -1,8 +1,10 @@
 #!/usr/bin/python
 #
-# clipf - personal finance manager in command line
+# clipf - personal finance manager with command line interface
+# Copyright (C) 2008 Denis Galtsev <galtsevdv@gmail.com>
+# clipf comes with ABSOLUTELY NO WARRANTY. Further details
+# including conditions of redistribution are contained in LICENSE.txt
 # http://code.google.com/p/clipf/
-# Author: Denis Galtsev <galtsevdv@gmail.com>
 #
 
 import sys, os, cmd, datetime, shlex,re,traceback
