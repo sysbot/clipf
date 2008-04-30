@@ -2,7 +2,21 @@
 Developer: Galtsev Denis <galtsevdv@gmail.com>
 Project site: http://code.google.com/p/clipf/
 
-Usage description.
+Installation:
+
+Not required. It is simple python script. Put it to any directory in Your PATH
+
+Configuration:
+
+Not required. Program would create config directory and empty database
+at start, if config directory doesn't exists (default to "~/.clipf/"). 
+
+Usage description:
+
+  clipf [<config_path>]
+   - start clipf with coniguration in <config_path> (default to
+     ~/.clipf). If config_path doesn't exists, it would be created 
+     with appropriate defaults.
 
 All commands described in embedded help. Type "help" in command line
 to see list of available commands, and "help <command>" for help
@@ -113,5 +127,3 @@ You can setup aliases (shortcuts) for frequently used operations in config file 
 See configuration file for examples.
 
 
-Limitations:
-Program can't use national characters. You must use only plain old ascii.

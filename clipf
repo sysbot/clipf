@@ -1,4 +1,9 @@
 #!/usr/bin/python
+#
+# clipf - personal finance manager in command line
+# http://code.google.com/p/clipf/
+# Author: Denis Galtsev <galtsevdv@gmail.com>
+#
 
 import sys, os, cmd, datetime, shlex,re,traceback
 from getopt import getopt
@@ -120,7 +125,8 @@ class App(cmd.Cmd):
                 line=self.aliases[key]+line[len(key):]
         return line.encode(self.term_enc)
     def preloop(self):
-        print """Personal finance accounting in command line.
+        print """clipf - Personal finance accounting in command line.
+Visit program site http://code.google.com/p/clipf/ for details.
 Type "help" for list of available commands. Type "help <command>" for help about particular command."""
     def _fx(self,m):
         m=m.group(1)
