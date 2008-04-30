@@ -1,6 +1,6 @@
 #!/usr/bin/python
 
-import sys, os, cmd, datetime, shlex,re
+import sys, os, cmd, datetime, shlex,re,traceback
 from getopt import getopt
 from os.path import expanduser
 import readline
@@ -48,6 +48,7 @@ aliases=[
         'oo :op add ',
         'ol:op ls',
         'pl:prod ls',
+        'cc :calc ',
         'o :op ',
         'p :prod ',
         'r :rep '
@@ -169,16 +170,26 @@ Type "help" for list of available commands. Type "help <command>" for help about
             cl=[s.decode(self.term_enc) for s in shlex.split(c)]
             check(len(cl),usage)
             cc=cl[0]
-            meth=getattr(self,'_%s_%s' % (cmd, cc))
+            meth=getattr(self,'_%s_%s' % (cmd, cc), None)
+            check(meth,usage)
             meth(cl[1:])
-        except AttributeError:
-            print usage
         except myerr, e:
             print e
+        except:
+            traceback.print_exc() 
         return 0
+    def do_calc(self,c):
+        try:
+            print "%.2f" % (c,eval(c))
+        except:
+            print "%s is not a numeric expression"
+    def help_calc(self):
+        print """ Usage: calc <expression>
+    Evaluate numeric expression <expression> and print the result
+    """
 
     def do_prod(self,c):
-        self._cmd('prod',c,"Usage: prod ( ls | add | rm ) <args>")
+        self._cmd('prod',c,"Usage: prod ( ls | add | rm | mv) <args>")
     def help_prod(self):
         print """ Usage: prod <subcommand> [options] [<args>] 
     Subcommands:
@@ -189,6 +200,10 @@ Type "help" for list of available commands. Type "help <command>" for help about
             - remove all items, which code starts with <item_code_pattern>
         ls [<item_code>]
             - list all items in <item_code> group
+        mv <old_code_prefix> <new_code_prefix>
+            - change product code. It update each item with code starts with <old_code_prefix>
+            by replacing <old_code_prefix> to <new_code_prefix>.
+            Also update all corresponding operations.
           """
     def do_op(self,c):
         self._cmd('op',c,"Usage: op ( ls | add ) <args>")
@@ -357,6 +372,40 @@ Type "help" for list of available commands. Type "help <command>" for help about
             del self.prodd[prod]
             print "Product %s deleted." % prod
         self.saveProds()
+    def _prod_mv(self,args):
+        usage="Usage: prod mv <from_code_pattern> <to_code_pattern>"
+        check(len(args)==2, usage)
+        pfrom,pto = args
+        flen=len(pfrom)
+        updated=[]
+        for pc in self.prodd.keys():
+            if pc.startswith(pfrom):
+                pcnew=pto+pc[flen:]
+                prod=self.prodd[pc]
+                prod.prod=pcnew
+                grp=prod.prod.rstrip('.')
+                try:
+                    pp=grp.rindex('.')
+                    grp=grp[:pp+1]
+                except ValueError:
+                    grp=''
+                prod.grp=grp
+                updated.append(prod)
+                del self.prodd[pc]
+        self.prodd.update([(p.prod,p) for p in updated])
+        pcnt=len(updated)
+        foptmp=open(self.db+'op.tmp','w')
+        opcnt=0
+        for op in self.select():
+            if op.prod.startswith(pfrom):
+                op.prod=pto+op.prod[flen:]
+                opcnt+=1
+            foptmp.write(self.opfmt % op.__dict__)
+        foptmp.close()
+        self.saveProds()
+        os.remove(self.db+'op')
+        os.rename(self.db+'op.tmp',self.db+'op')
+        print "renamed %d items in %d operantions" % (pcnt,opcnt)
     def _op_ls(self,args):
         fmt=self.ffmt('$(date)  $(acc:acc_id)  $(amount)  $(prod:prod_code_full)  $(note)')
         prod_code=args and args[0] or ''

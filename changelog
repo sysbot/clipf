@@ -43,3 +43,7 @@
 2008-04-29 V0.3.2
  - now allow national characters (i18n)
  - a lot of code rewriten to use objects instead dictionaries
+
+2008-04-30 V0.3.3
+ - item code update function (prod mv)
+ - embedded calculator (calc <expr>)
