@@ -31,6 +31,15 @@ describe, that this item is group (have subling items).
 .P
 .B operation
 - define single money transaction (income or expense).
+.SH USAGE
+Type
+.B help
+to see available commands. Type
+.B help <command>
+to see online help about particular <command>.
+.P
+For most reporting commands, output can be piped to external shell command the
+same way, as shell do.
 .SH COMMANDS CONCERNING ITEMS
 .TP
 prod add [\-d] <item_code> <item_name>
@@ -86,7 +95,10 @@ Show remains and turnovers for all accounts.
 .SH OTHER COMMANDS
 .TP
 set <option> <value>
-Set global option <option> value to <value>
+Set global option <option> value to <value>. For date options,
+base format is Y-M-D. Leading 0 can be ommited. For the current
+year, year part can be ommited. For current month, year and month
+parts can be ommited.
 Available options:
 .RS
 .TP 
@@ -113,6 +125,19 @@ Show current values of all global options or specified <option>.
 .TP
 calc <expression>
 Embedded calculator. Evaluate numeric expression and print the result.
+.SH EXAMPLES
+.TP
+set date_from 2008-04-01
+- set reporting start period to 2008-04-01.
+.TP
+r prod
+- show turnover report by top level items.
+.TP
+op ls | grep foo | less
+pipe report output to shell command.
+.TP
+op ls | cat - >somefile.txt
+save report output to file
 .SH FILES
 .I ~/.clipf/
 .RS

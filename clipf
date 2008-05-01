@@ -13,6 +13,7 @@ from os.path import expanduser
 import readline
 import readline, imp
 
+re_date=re.compile('^(((?P<year>\d+)-)?(?P<month>\d+)-)?(?P<day>\d+)$')
 opts,args = getopt(sys.argv[1:],'h',['help'])
 opts=dict(opts)
 if '-h' in opts or '--help' in opts:
@@ -73,6 +74,17 @@ class myerr(Exception): pass
 def check(cond, msg):
     if not cond:
         raise myerr(msg)
+
+def fixDate(s):
+    m=re.match(re_date,s)
+    check(m,"%s is not appropriate date value" % s)
+    cyear,cmonth,cday = datetime.date.today().timetuple()[:3]
+    y = int(m.group('year') or cyear)
+    if y<1999:
+        y+=2000
+    mn = int(m.group('month') or cmonth)
+    d=int(m.group('day'))
+    return datetime.date(y,mn,d).isoformat()
 
 class Rec(object):
     def __init__(self,**kwargs):
@@ -169,7 +181,9 @@ Type "help" for list of available commands. Type "help <command>" for help about
                 yield Rec(date=rr[0],acc=rr[1],prod=rr[2],amount=float(rr[3]),dc=int(rr[4]),note=rr[5])
         f.close()
     def dest(self,lst):
-        if len(lst)>int(opt.max_lines) and self.interactive:
+        if self.pipe:
+            return os.popen(self.pipecmd, 'w')
+        elif len(lst)>int(opt.max_lines) and self.interactive:
             return os.popen('less','w')
         else:
             return None
@@ -180,6 +194,13 @@ Type "help" for list of available commands. Type "help <command>" for help about
             cc=cl[0]
             meth=getattr(self,'_%s_%s' % (cmd, cc), None)
             check(meth,usage)
+            try:
+                pipestart=cl.index('|')
+                self.pipecmd=' '.join(cl[pipestart+1:])
+                self.pipe=True
+                cl=cl[:pipestart]
+            except ValueError:
+                self.pipe=False
             meth(cl[1:])
         except myerr, e:
             print e
@@ -199,7 +220,7 @@ Type "help" for list of available commands. Type "help <command>" for help about
     def do_prod(self,c):
         self._cmd('prod',c,"Usage: prod ( ls | add | rm | mv) <args>")
     def help_prod(self):
-        print """ Usage: prod <subcommand> [options] [<args>] 
+        print """ Usage: prod <subcommand> [options] [<args>]
     Subcommands:
         add [-d] <item_code> <item_name> 
             - add new item. '-d' option mark item as income
@@ -212,6 +233,9 @@ Type "help" for list of available commands. Type "help <command>" for help about
             - change product code. It update each item with code starts with <old_code_prefix>
             by replacing <old_code_prefix> to <new_code_prefix>.
             Also update all corresponding operations.
+        dump
+            - dump full list of items in format appropriate for piping to clipf.
+            Useful for data exchange between different clipf instances.
           """
     def do_op(self,c):
         self._cmd('op',c,"Usage: op ( ls | add ) <args>")
@@ -227,6 +251,9 @@ Type "help" for list of available commands. Type "help <command>" for help about
         ls [<item_code_pattern>]
             - show list of operations for the default reporting period (see 'help set' for details)
               if <item_code_pattern> specified, show only operations with items, which code starts with pattern
+        dump
+            - dump operations in the reporting period in format appropriated for piping to
+            clipf. Useful for data exchange between different clipf instances.
     Note:
         There is no delete command for operation. You need to add the same operation with negative amount
         to revoke operation.
@@ -361,6 +388,7 @@ Type "help" for list of available commands. Type "help <command>" for help about
         chk=self.prodd.get(group,None)
         check(chk or (group==''), "Product group %s don't exists" % group)
         args=Rec(prod=prod_code,grp=group,name=args[1],dc=dc)
+        check(':' not in args.prod and ':' not in args.name, "item code/name must not contain colon ':'")
         self.prodd[prod_code]=args
         f=open(self.db+'prod','a')
         rr=self.prodfmt % args.__dict__
@@ -368,10 +396,9 @@ Type "help" for list of available commands. Type "help <command>" for help about
         f.close()
         print "Product %s added" % args.prod
     def _prod_dump(self,args):
-        sql="""select prod_code,prod_name,dt from prod order by prod_code"""
-        for r in self.select_d(sql):
-            r['dtopt']=r['dt']==1 and '-d' or ''
-            print "prod add %(dtopt)s %(prod_code)s '%(prod_name)s'" % r
+        for r in self.prodd.itervalues():
+            r.dcopt=(r.dc==1 and '-d' or '')
+            print "prod add %(dcopt)s %(prod)s '%(name)s'" % r.__dict__
     def _prod_rm(self,args):
         usage="prod del <prod_code>"
         check(len(args)==1, usage)
@@ -434,12 +461,9 @@ Type "help" for list of available commands. Type "help <command>" for help about
         except IOError:
             pass
     def _op_dump(self,args):
-        sql="""select op_date,acc_id,prod_code,amount,note
-            from op
-            where op_date between '%(date_from)s' and '%(date_to)s'
-            """ % self.opt
-        for r in self.select_d(sql):
-            print "op add -d %(op_date)s -a %(acc_id)s %(prod_code)s %(amount).2f '%(note)s'" % r
+        for r in self.select(dfrom=opt.date_from):
+            if r.date<=opt.date_to:
+                print "op add -d %(date)s -a %(acc)s %(prod)s %(amount).2f '%(note)s'" % r.__dict__
     def _op_add(self,args):
         usage="Usage: op add [-d <op_date>] [-a acc] <prod_code> <amount> [note]"
         ops,args = getopt(args,'a:d:')
@@ -453,11 +477,13 @@ Type "help" for list of available commands. Type "help <command>" for help about
             note=''
         dd=Rec(
             acc= ops.get('-a',opt.acc),
-            date= ops.get('-d',opt.date),
+            date= fixDate(ops.get('-d',opt.date)),
             prod= prod.prod,
             amount= float(args[1]),
             dc=prod.dc,
             note= note)
+        check(':' not in dd.acc, "Account must not contain colon ':'")
+        check(':' not in dd.note, "Note must not contain colon ':'")
         f=open(self.db+'op','a')
         rr=self.opfmt % dd.__dict__
         f.write(rr.encode(self.db_enc))
@@ -481,14 +507,18 @@ Type "help" for list of available commands. Type "help <command>" for help about
     def do_set(self,c):
         usage="Usage: set <option> <value>"
         cl=shlex.split(c)
-        if len(cl)==2:
+        try:
+            check(len(cl)==2, usage)
+            k,v = cl
+            check(k in opt.__dict__, "Unknown option: %s" % k)
+            if k.startswith('date'):
+                v=fixDate(v)
             # set option value
-            if cl[0] in opt.__dict__:
-                opt.__dict__[cl[0]]=cl[1]
-            else:
-                print "Unknown option: %s" % cl[0]
-        else:
-            print usage
+            opt.__dict__[k]=v
+        except myerr, e:
+            print e
+        except:
+            traceback.print_exc()
         self.setPrompt()
     def help_set(self):
         print """ Usage: set <option> <value>
@@ -498,7 +528,7 @@ Type "help" for list of available commands. Type "help <command>" for help about
         acc - default account for new operation.
         max_lines - use console viewer (less) if report output exceed this number of lines.
     Note:
-        Enter all dates in YYYY-MM-DD format.
+        Enter all dates in any of this formats: YYYY-MM-DD or MM-DD or DD.
         """
 
     def do_quit(self,c):
