@@ -59,3 +59,8 @@
  - better exception handling in "set" command
  - op dump and prod dump fixed
  - pipe reports output to shell command
+
+2008-05-03 V0.3.6
+ - operation tagging
+ - new configuration system
+ - monochrome mode
