@@ -11,8 +11,8 @@ import sys, os, cmd, datetime, shlex, re, traceback, readline
 from getopt import getopt
 from os.path import expanduser
 
-version='0.3.6'
-db_version='0.3.6'
+version='0.4'
+db_version='0.4'
 
 re_date=re.compile('^(((?P<year>\d+)-)?(?P<month>\d+)-)?(?P<day>\d+)$')
 opts,args = getopt(sys.argv[1:],'hm',['help','init','mono','migrate'])
@@ -222,9 +222,9 @@ class App(cmd.Cmd):
                 line=opt.aliases[key]+line[len(key):]
         return line.encode(opt.term_enc)
     def preloop(self):
-        print """clipf - Personal finance accounting in command line.
+        print """clipf V %s - Personal finance accounting in command line.
 Visit program site http://code.google.com/p/clipf/ for details.
-Type "help" for list of available commands. Type "help <command>" for help about particular command."""
+Type "help" for list of available commands. Type "help <command>" for help about particular command.""" % version
     def _fx(self,m):
         m=m.group(1)
         if ':' in m:
