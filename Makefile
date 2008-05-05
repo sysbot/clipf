@@ -1,10 +1,13 @@
 
-ROOTDIR=/usr
+ROOTDIR=
+BINDIR=usr/bin
+CONFDIR=etc
+MANDIR=usr/share/man/man1
 
 install:
-	install -d $(ROOTDIR)/bin
-	install -m 755 clipf $(ROOTDIR)/bin
-	install -d $(ROOTDIR)/etc
-	install -m 644 clipf.conf $(ROOTDIR)/etc
-	install -d $(ROOTDIR)/share/man/man1
-	install -m 644 man/clipf.1 $(ROOTDIR)/share/man/man1
+	install -d $(ROOTDIR)/$(BINDIR)
+	install -m 755 clipf $(ROOTDIR)/$(BINDIR)
+	install -d $(ROOTDIR)/$(CONFDIR)
+	install -m 644 clipf.conf $(ROOTDIR)/$(CONFDIR)
+	install -d $(ROOTDIR)/$(MANDIR)
+	install -m 644 man/clipf.1 $(ROOTDIR)/$(MANDIR)
