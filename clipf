@@ -15,10 +15,10 @@ version='0.3.6'
 db_version='0.3.6'
 
 re_date=re.compile('^(((?P<year>\d+)-)?(?P<month>\d+)-)?(?P<day>\d+)$')
-opts,args = getopt(sys.argv[1:],'hm',['help','init','mono'])
+opts,args = getopt(sys.argv[1:],'hm',['help','init','mono','migrate'])
 opts=dict(opts)
 if '-h' in opts or '--help' in opts:
-    print """ Usage %s [-h] [--help] [--init] [-m] [--mono] [<conf_path>]
+    print """ Usage %s [-h] [--help] [--init] [-m] [--mono] [--migrate] [<conf_path>]
     <conf_path> default to ~/.clipf/
     --init to initialize new configuration directory
     -m, --mono to use monochrome output
@@ -45,15 +45,51 @@ if not os.access(confpath,os.F_OK):
         open(confpath+'clipf.conf','w').close()
         print "Done"
 
+def _migrate(confpath,ver):
+    if ver=='0.3.5':
+        #add tag field to op
+        os.rename(confpath+'db/op',confpath+'db/op1')
+        src=open(confpath+'db/op1','r')
+        dest=open(confpath+'db/op','w')
+        for ln in src:
+            dest.write(ln.strip('\n')+':\n')
+        src.close()
+        dest.close()
+        os.remove(confpath+'db/op1')
+
+def migrate(confpath,ver):
+    supported=['0.3.5']
+    if ver not in supported:
+        print "Migration from version %s not supported" % ver
+        sys.exit(1)
+    try:
+        os.system('cp -r %s/db %s/db~' % (confpath, confpath))
+        _migrate(confpath,ver)
+        open(confpath+'version','w').write(str(db_version))
+        os.system('rm -r %s/db~' % confpath)
+        print "Migration completed"
+    except:
+        traceback.print_exc()
+        os.system('rm -r %s/db' % confpath)
+        os.rename(confpath+'db~', confpath+'db')
+    sys.exit(0)
+
+
+
 #check db version
 if not os.access(confpath+'version',os.F_OK):
     ver='0.3.5'
 else:
     ver=open(confpath+'version','r').read().strip('\n')
 if ver!=db_version:
-    print "Version mismatch"
-    print "db version is %s while program require %s version. db need to be converted" % (ver,db_version)
-    sys.exit(1)
+    if '--migrate' in opts:
+        migrate(confpath,ver)
+        sys.exit(0)
+    else:
+        print "Version mismatch"
+        print """db version is %s while program require %s version. 
+Run clipf with --migrate option to convert database""" % (ver,db_version)
+        sys.exit(1)
 
 
 class myerr(Exception): pass
@@ -97,9 +133,10 @@ class opt(object):
         'prod_code_full':'\033[34;1m%%(%s)-10s\033[0m',
         'acc_id':'\033[35;1m%%(%s)-10.10s\033[0m',
         'prod_name':'\033[36m%%(%s)-16s\033[0m',
-        'note':'\033[36m%%(%s)-16s\033[0m',
+        'note':'\033[36m%%(%s)s\033[0m',
         'amount':'\033[37m%%(%s)8.2f\033[0m',
         'date':'\033[0m%%(%s)s',
+        'tags':'\033[0m%%(%s)s',
         'header':'\033[34;1m',
         'param':'\033[35;1m%%(%s)s\033[0m',
         'prompt':'\033[31m%(date)s:%(acc)s> \033[0m',
@@ -111,9 +148,10 @@ class opt(object):
         'prod_code_full':'%%(%s)-10s',
         'acc_id':'%%(%s)-10.10s',
         'prod_name':'%%(%s)-16s',
-        'note':'%%(%s)-16s',
+        'note':'%%(%s)s',
         'amount':'%%(%s)8.2f',
         'date':'%%(%s)s',
+        'tags':'%%(%s)s',
         'header':'',
         'param':'%%(%s)s',
         'prompt':'%(date)s:%(acc)s> ',
@@ -287,10 +325,12 @@ Type "help" for list of available commands. Type "help <command>" for help about
     def help_op(self):
         print """ Usage: op <subcommand> [<options>] <args>
     Subcommands:
-        add [-d <date>] [-a <account>] <item_code> <amount> [<note>]
+        add [-d <date>] [-a <account>] [-t <tag>] <item_code> <amount> [<note>]
             - add new operation.
                 '-d' - override operation date to <date> (see 'help set' for details)
                 '-a' - override operation account to <account> (see 'set' for details)
+                '-t' - mark operation with <tag>. Several '-t' options may be used to mark
+                operation with several tags.
               the income/expense flag for operation would be taken from item 
               type <note> in quotes, if it contain spaces
         ls [-t <tag_prefix>] [<item_code_pattern>]
@@ -310,28 +350,40 @@ Type "help" for list of available commands. Type "help <command>" for help about
     def help_rep(self):
         print """ Usage: rep <subcommand> [<args>]
     Subcommands:
-        prod [-t <tag_prefix>] [<item_code>]
+        prod [-t <tag_prefix>] [-a <account>] [<item_code>]
             - show turnover report with total turnover by each subling of <item_code> item group. 
-              Default by root group. if <tag_prefix> specified, select only operations, tagged with,
-              tags,starts with <tag_prefix>
+              Default by root group. 
+                '-t' - select operations, tagged with tags, starts with <tag_prefix>
+                '-a' - select operations by account <account>
         acc
             - show turnover and remains by each account
+        tag <tag_group>
+            - show turnover by <tag_group> subtags.
         """
 
     def _rep_prod(self,args):
         ops, args=getopt(args,'t:')
-        if ops:
-            k,v = ops[0]
-            check(k=='-t', 'Unknown option: %s' % k)
-            tag='<'+v
-        else:
-            tag=''
+        acc=''
+        tag=''
+        for k,v in ops:
+            check(k in ('-a','-t'), 'Unknown option: %s' % k)
+            if k=='-t': 
+                tag='<'+v
+            else:
+                acc=v
         prod_group=args and args[0] or ''
-        dt,ct = 0.0, 0.0
         grplen=len(prod_group)
         groups={}
+        conds=['r.date<=opt.date_to']
+        if prod_group:
+            conds.append('r.prod.startswith(prod_group)')
+        if acc:
+            conds.append('r.acc==acc')
+        if tag:
+            conds.append('r.tags.find(tag)!=-1')
+        cond=compile(' and '.join(conds),'<string>','eval')
         for r in self.select(dfrom=opt.date_from):
-            if r.prod.startswith(prod_group) and r.date<=opt.date_to and r.acc==opt.acc and (not tag or r.tags.find(tag)!=-1):
+            if eval(cond):
                 prod=r.prod[grplen:]
                 pp=prod.find('.')
                 if pp==-1:
@@ -345,8 +397,36 @@ Type "help" for list of available commands. Type "help <command>" for help about
                 rr.dt+=r.amount*r.dc #income
                 rr.ct+=r.amount*(1-r.dc) #expense
         data=groups.values()
+        self.printRepProd(data,prod_group)
+    def _rep_tag(self,args):
+        check(args,"Usage: rep tag <tag_group>")
+        tag_group=args[0]
+        tag_pat='<'+tag_group
+        grplen=len(tag_group)
+        groups={}
+        re_tag=re.compile('<(%s.+?)>' % tag_group.replace('.','\.'))
+        for r in self.select(dfrom=opt.date_from):
+            if r.date<=opt.date_to and r.tags.find(tag_pat)!=-1:
+                tag=re_tag.search(r.tags).group(1)
+                prod=tag[grplen:]
+                pp=prod.find('.')
+                if pp==-1:
+                    grp=prod
+                else:
+                    grp=prod[:pp+1]
+                rr=groups.get(grp,None)
+                if not rr:
+                    rr=Rec(prod=grp,dt=0.0,ct=0.0)
+                    groups[grp]=rr
+                rr.dt+=r.amount*r.dc #income
+                rr.ct+=r.amount*(1-r.dc) #expense
+        data=groups.values()
+        self.printRepProd(data,tag_group)
+
+    def printRepProd(self,data,prod_group):
         data.sort(key=lambda rr:rr.prod)
         dest=self.dest(data)
+        dt,ct = 0.0, 0.0
         fmt=self.ffmt("$(prod)  $(dt:amount)  $(ct:amount)  %(per)4.1f%%  $(prod_name)")
         try:
             print >>dest, self.ffmt("[[ Report by product. Period from $(date_from:param)[[ to $(date_to:param)]]") % opt
@@ -496,7 +576,7 @@ Type "help" for list of available commands. Type "help <command>" for help about
         os.rename(self.db+'op.tmp',self.db+'op')
         print "renamed %d items in %d operantions" % (pcnt,opcnt)
     def _op_ls(self,args):
-        fmt=self.ffmt('$(date)  $(acc:acc_id)  $(amount)  $(prod:prod_code_full)  $(note)')
+        fmt=self.ffmt('$(date)  $(acc:acc_id)  $(amount)  $(prod:prod_code_full)  $(note) $(tags:tags)')
         ops,args=getopt(args,'t:')
         if ops:
             k,tag=ops[0]

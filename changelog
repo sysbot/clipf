@@ -60,7 +60,10 @@
  - op dump and prod dump fixed
  - pipe reports output to shell command
 
-2008-05-03 V0.3.6
+2008-05-05 V0.4
  - operation tagging
  - new configuration system
  - monochrome mode
+ - version marker file in db
+ - db structure migration schema
+ - man updated

@@ -31,6 +31,12 @@ describe, that this item is group (have subling items).
 .P
 .B operation
 - define single money transaction (income or expense).
+.P
+.B tag
+- arbitrary string, used for additional classification of operations.
+Have the same nesting rules as items.
+Any number of tags can be added to each operation. It may be good idea
+to store available tags in item list.
 .SH USAGE
 Type
 .B help
@@ -64,31 +70,45 @@ replacing it to <new_item_code_prefix>. Item codes in operation list
 would be updated as well.
 .SH COMMANDS CONCERNING OPERATIONS
 .TP
-op add [\-d <date>] [\-a <account>] <item_code> <amount> [<note>]
+op add [\-d <date>] [\-a <account>] [-t <tag>] <item_code> <amount> [<note>]
 Add new operation
 .RS
 .TP
-.B \-d
+.B \-d <date>
 - override default operation date to <date>.
 .TP
-.B \-a
+.B \-a <account>
 - override defaut operation account to <account>
+.TP
+.B \-t <tag>
+- label operation with <tag>. Any number of -t options can be used to
+add several tags to operation.
 .RE
 .TP
-op ls [<item_code_prefix>]
+op ls [-t <tag_prefix>] [<item_code_prefix>]
 Show list of operations in current reporting period. If
 <item_code_prefix> specified, list would be limited by the operations,
-which item code starts with <item_code_prefix>.
+which item code starts with <item_code_prefix>. If '-t <tag_prefix>'
+option specified, limit output with operations, labelled with tag,
+starts with <tag_prefix>
 .SH COMMANDS CONCERNING REPORTING
 Reporting period is always between <date_from> and <date_to> global
 options, which You set by
 .B set
 command.
 .TP
-rep prod [<item_code>]
+rep prod [-t <tag_prefix>] [-a <account>] [<item_code>]
 Show turnover report for items (item groups), which are direct subling
 of <item_code> (default to root). Turnover for item group is summ of
-turnovers of all their nested items/groups.
+turnovers of all their nested items/groups. 
+.RS
+.TP
+.B -t <tag_prefix>
+take into account only operations, labelled with tag, starts with <tag_prefix>
+.TP
+.B -a <account>
+take into account only operations by <account> account.
+.RE
 .TP
 rep acc
 Show remains and turnovers for all accounts.
@@ -125,6 +145,16 @@ Show current values of all global options or specified <option>.
 .TP
 calc <expression>
 Embedded calculator. Evaluate numeric expression and print the result.
+.SH ALIASES
+Aliases is the simple way to make shortcuts for frequently used
+commands. Alias can be defined by the pair of strings:
+<command_line_prefix> and <prefix_substitution_string>. If command
+line starts with any of the defined aliases <command_line_prefix>,
+this prefix would be substituted with corresponding
+<prefix_substitution_string>. Examples can be found in system
+configuration file (see 
+.B FILES
+).
 .SH EXAMPLES
 .TP
 set date_from 2008-04-01
@@ -139,8 +169,21 @@ pipe report output to shell command.
 op ls | cat - >somefile.txt
 save report output to file
 .SH FILES
+All configuration files have the same format - plain python code, that
+would be executed during clipf startup, in the context of main module.
+More specific configuration file can overwrite settings from more
+general one.
+.TP
+.I /etc/clipf.conf
+system-wide configuration file
+.TP
+.I ~/.clipf.conf
+user-specific configuration
+.TP
+.I <config_path>/clipf.conf
+configuration-specific settings.
+.TP
 .I ~/.clipf/
-.RS
 Default configuration directory. Contain
 .I clipf.conf
 configuration file, and
