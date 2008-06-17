@@ -11,8 +11,8 @@ import sys, os, cmd, datetime, shlex, re, traceback, readline
 from getopt import getopt
 from os.path import expanduser
 
-version='0.4'
-db_version='0.4'
+version='0.4.1'
+db_version='0.4.1'
 
 re_date=re.compile('^(((?P<year>\d+)-)?(?P<month>\d+)-)?(?P<day>\d+)$')
 opts,args = getopt(sys.argv[1:],'hm',['help','init','mono','migrate'])
@@ -56,9 +56,13 @@ def _migrate(confpath,ver):
         src.close()
         dest.close()
         os.remove(confpath+'db/op1')
+        ver='0.4'
+    if ver=='0.4':
+        open(confpath+'db/rate','w').close()
+        ver='0.4.1'
 
 def migrate(confpath,ver):
-    supported=['0.3.5']
+    supported=['0.3.5','0.4']
     if ver not in supported:
         print "Migration from version %s not supported" % ver
         sys.exit(1)
@@ -70,11 +74,9 @@ def migrate(confpath,ver):
         print "Migration completed"
     except:
         traceback.print_exc()
-        os.system('rm -r %s/db' % confpath)
-        os.rename(confpath+'db~', confpath+'db')
+        #os.system('rm -r %s/db' % confpath)
+        #os.rename(confpath+'db~', confpath+'db')
     sys.exit(0)
-
-
 
 #check db version
 if not os.access(confpath+'version',os.F_OK):
@@ -137,6 +139,7 @@ class opt(object):
         'amount':'\033[37m%%(%s)8.2f\033[0m',
         'date':'\033[0m%%(%s)s',
         'tags':'\033[0m%%(%s)s',
+        'rate':'\033[37m%%(%s)8.4f\033[0m',
         'header':'\033[34;1m',
         'param':'\033[35;1m%%(%s)s\033[0m',
         'prompt':'\033[31m%(date)s:%(acc)s> \033[0m',
@@ -152,6 +155,7 @@ class opt(object):
         'amount':'%%(%s)8.2f',
         'date':'%%(%s)s',
         'tags':'%%(%s)s',
+        'rate':'%%(%s)8.4f',
         'header':'',
         'param':'%%(%s)s',
         'prompt':'%(date)s:%(acc)s> ',
@@ -270,6 +274,13 @@ Type "help" for list of available commands. Type "help <command>" for help about
             return os.popen('less','w')
         else:
             return None
+    def rates(self):
+        f=open(self.db+'rate','r')
+        rates=[ln.split(':') for ln in f]
+        rates=dict([(account,float(rate)) for account, rate in rates])
+        f.close()
+        return rates
+
     def _cmd(self,cmd,c,usage):
         try:
             cl=[s.decode(opt.term_enc) for s in shlex.split(c)]
@@ -290,6 +301,44 @@ Type "help" for list of available commands. Type "help <command>" for help about
         except:
             traceback.print_exc() 
         return 0
+    def do_rate(self,c):
+        self._cmd('rate',c,"Usage: rate ( ls | set ) <args>")
+    def help_rate(self):
+        print """ Usage: rate <subcommand> <args>
+        - work with currency exchange rates
+    Subcommands:
+        ls
+            - list all rates
+        set <account> <rate>
+            - set exchange rate for <account> to <rate>. If exchange rate 
+            for account is not set, default value 1.0 used.
+    """
+    def _rate_ls(self, args):
+        rates=[Rec(acc=acc,rate=float(rate)) for acc, rate in self.rates().items()]
+        rates.sort(key=lambda r:r.acc)
+        fmt=self.ffmt("$(acc:acc_id)  $(rate:rate)")
+        dest=self.dest(rates)
+        try:
+            print >>dest, self.ffmt("[[ Rate list ]]") 
+            for dd in rates:
+                print >>dest, fmt % dd
+        except IOError:
+            pass
+    def _rate_set(self, args):
+        check(len(args)==2, "Usage: rate set <account> <rate>")
+        account, rate = args
+        try:
+            frate=float(rate)
+        except ValueError:
+            print "Bad value for exchange rate: %s" % rate
+            exit
+        rates=self.rates()
+        rates[account]=frate
+        f=open(self.db+'rate','w')
+        for rr in rates.items():
+            f.write("%s:%8.4f\n" % rr)
+        f.close()
+
     def do_calc(self,c):
         try:
             print "%.2f" % eval(c)
@@ -362,7 +411,7 @@ Type "help" for list of available commands. Type "help <command>" for help about
         """
 
     def _rep_prod(self,args):
-        ops, args=getopt(args,'t:')
+        ops, args=getopt(args,'t:a:')
         acc=''
         tag=''
         for k,v in ops:
@@ -437,7 +486,7 @@ Type "help" for list of available commands. Type "help <command>" for help about
             for dd in data:
                 dt+=dd.dt
                 ct+=dd.ct
-                dd.per=dd.ct*100/tot
+                dd.per=abs(tot)>0.001 and dd.ct*100/tot or 0.00
                 prod=self.prodd.get(prod_group+dd.prod,None)
                 dd.prod_name=prod and prod.name or "code not in list"
                 print >>dest, fmt % dd
@@ -449,6 +498,7 @@ Type "help" for list of available commands. Type "help <command>" for help about
     def _rep_acc(self,args):
         rb, dt,ct = 0.0, 0.0, 0.0
         data={}
+        rates=self.rates()
         for r in self.select():
             rr=data.get(r.acc,None)
             if not rr:
@@ -467,11 +517,13 @@ Type "help" for list of available commands. Type "help <command>" for help about
             print >>dest, opt.fmts['spln']
             fmt=self.ffmt("$(acc:acc_id)  $(rest:amount)  $(dt:amount)  $(ct:amount)  $(re:amount)")
             for dd in data:
-                dd.re=dd.rest+dd.dt-dd.ct
-                rb+=dd.rest
-                dt+=dd.dt
-                ct+=dd.ct
-                print >>dest, fmt % dd
+                if (abs(dd.rest)+abs(dd.dt)+abs(dd.ct))>0.001:
+                    dd.re=dd.rest+dd.dt-dd.ct
+                    rate=float(rates.get(dd.acc, 1.0))
+                    rb+=dd.rest*rate
+                    dt+=dd.dt*rate
+                    ct+=dd.ct*rate
+                    print >>dest, fmt % dd
             print >>dest, opt.fmts['spln']
             print >>dest, self.ffmt("[[Totals:]]     %8.2f  %8.2f  %8.2f  %8.2f") % (rb,dt,ct,rb+dt-ct)
         except IOError:
