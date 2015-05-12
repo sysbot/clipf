@@ -1,0 +1,134 @@
+﻿#labels featured
+
+Before further use, You need to enter some income/expense categories:
+```
+prod add [-d] <prod_code> <prod_name>
+```
+> -d options mark this category as debt (income). Category is credit (expense) by default.
+
+Examples:
+```
+# enter category codes with trailing period
+prod add meal. Meals
+# p shortcuts to prod
+p add meal.drink. Drinks
+# Enter category names with spaces in quotes
+p add meal.drink.beer "My preferred beer"
+p add meal.juice Juice
+p add meal.cookie Cookie
+p add meal.nuts "Roasted nuts"
+# You need identify category as income during creation
+p add -d salary Salary
+```
+
+Now You can see Your category list:
+```
+prod ls [<prod_group>]
+```
+> - show _one_ level of category tree (default to root).
+
+Example:
+```
+prod ls
+prod ls meal.
+```
+
+Remove products with:
+```
+prod rm <prod_code>
+```
+
+Now You can enter some operations:
+```
+op add [-a <account>] [-d <date>] <prod_code> <amount> [<note>]
+```
+  * -a 
+
+&lt;account&gt;
+
+ - override default account for this operation.
+  * -d 
+
+&lt;date&gt;
+
+ - override default date for this operation. Enter date in "YYYY-MM-DD" format.
+
+Examples
+```
+# Entering starting remain as salary
+op add salary 450.0 "Starting remain"
+# now some expenses:
+op add meal.drink.beer 5.5
+op add meal.nuts 3.45 "Nuts to beer"
+op add meal.cookie 2.80
+```
+
+Use tab completion to enter long prod codes (press 
+
+&lt;tab&gt;
+
+ once or twice during prod\_code entering).
+
+List entered operations with:
+```
+op ls [<prod_code_pattern>]
+```
+> - show list of operations in selected period (see `set`)
+    * 
+
+<prod\_code\_pattern>
+
+ - show operations with prod\_code starting with prod\_code\_pattern
+
+Delete operation: impossible. You need to enter the same operation with negative amount to revoke already entered operation.
+
+Now let's list and change some defaults:
+```
+# see list of options
+show
+#set option value
+set <option_name> <option_value>
+```
+options description:
+  * **date** - default date for new operations
+  * **acc** - default account for new operations
+  * **date\_from, date\_to** - period for all listings (`op ls` and reports
+  * **max\_lines** - if show operation output in pager (less) if output length is more, than 
+
+<max\_lines>
+
+ lines.
+
+Reports
+```
+rep prod [<prod_group>]
+rep acc
+```
+
+Example:
+```
+# set period for reports
+set date_from 2008-03-01
+set date_to 2008_03-31
+# show totals by top level groups
+rep prod
+# show details for meal. group
+rep prod meal.
+# turnover by accounts
+rep acc
+```
+
+Other useful features:
+
+Program understand input stream redirection:
+```
+$echo -e "set date_from 2008-04-01\nop ls" | clipf
+```
+> - this can be used to save reports.
+
+You can setup aliases (shortcuts) for frequently used operations in config file (default to ~/.clipf/clipf.conf).
+See configuration file for examples.
+
+
+Limitations:
+Program can't use national characters. You must use only plain old ascii.
